@@ -1,0 +1,57 @@
+{
+  "name": "git-buddy",
+  "displayName": "Git Buddy",
+  "description": "One-click Git push pipeline automation with interactive stepper dashboard",
+  "version": "1.0.0",
+  "publisher": "sanjay",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SANJAY-N0/git-buddy.git"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "git-buddy-sidebar-container",
+          "title": "Git Buddy",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "git-buddy-sidebar-container": [
+        {
+          "type": "webview",
+          "id": "git-buddy-sidebar",
+          "name": "GitPush Pipeline Dashboard"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "git-buddy.oneClickPush",
+        "title": "Git Buddy: One-Click Push Code"
+      },
+      {
+        "command": "git-buddy.connectGitHub",
+        "title": "Git Buddy: Connect GitHub Account"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^4.9.4"
+  }
+}
