@@ -11,7 +11,7 @@ function activate(context) {
     const sidebarProvider = new SidebarProvider_1.SidebarProvider(context.extensionUri);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('git-buddy-sidebar', sidebarProvider));
     let connectGitHubCommand = vscode.commands.registerCommand('git-buddy.connectGitHub', async () => {
-        try {
+         try {
             const session = await vscode.authentication.getSession('github', ['repo', 'user'], { createIfNone: true });
             if (session) {
                 vscode.window.showInformationMessage(`✅ Git Buddy: Connected to GitHub successfully as @${session.account.label}!`);
