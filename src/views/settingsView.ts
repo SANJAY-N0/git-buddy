@@ -10,6 +10,10 @@ export function getSettingsView(): string {
             <img id="githubAvatar" src="" class="profile-avatar" alt="profile"/>
             <div id="githubUserHandle" style="font-size:14px; font-weight:bold; margin-bottom:4px;">-</div>
             <div id="githubRepoCount" style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Active Repositories: --</div>
+            
+            <div class="form-label" style="text-align:left; margin-top:16px; margin-bottom:6px;">Your GitHub Repositories</div>
+            <div id="settingsRepoList" class="file-scroll-stack" style="max-height:140px; text-align:left; margin-bottom:12px;"></div>
+
             <button class="btn btn-secondary" onclick="vscode.postMessage({command:'runConnectAuth'})">🔄 Switch Account</button>
         </div>
     </div>`;

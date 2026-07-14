@@ -46,6 +46,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 case 'openExternalUrl':
                     if (data.url) { vscode.env.openExternal(vscode.Uri.parse(data.url)); }
                     break;
+                case 'fetchRepoFiles':
+                    await vscode.commands.executeCommand('git-buddy.fetchRepoFilesAction', data);
+                    break;
                 case 'tabChanged':
                     await this._context.workspaceState.update('activeTab', data.tabId);
                     if (data.tabId === 'current') {
@@ -298,21 +301,46 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                 document.getElementById('githubAvatar').src = msg.payload.avatar;
                                 document.getElementById('githubUserHandle').innerText = '@' + msg.payload.login;
                                 document.getElementById('githubRepoCount').innerText = 'Active Repositories: ' + msg.payload.count;
+                                
+                                const settingsRepoList = document.getElementById('settingsRepoList');
+                                if (settingsRepoList) {
+                                    if (msg.payload.repos && msg.payload.repos.length) {
+                                        settingsRepoList.innerHTML = msg.payload.repos.map(r => 
+                                            '<div class="file-stack-item" style="padding: 4px; display: flex; justify-content: space-between; align-items: center;">' +
+                                                '<span><b>' + r.name + '</b> (' + r.visibility + ')</span>' +
+                                                '<span style="font-size: 9px; color: var(--text-muted);">' + r.branch + '</span>' +
+                                            '</div>'
+                                        ).join('');
+                                    } else {
+                                        settingsRepoList.innerHTML = '<div style="color:var(--text-muted); padding:4px;">No repositories found</div>';
+                                    }
+                                }
                             } else {
                                 unauth.style.display = 'block';
                                 auth.style.display = 'none';
                             }
                             break;
 
+                        case 'renderRepoFilesDetails':
+                            const detailRepoFiles = document.getElementById('detailRepoFiles');
+                            if (detailRepoFiles) {
+                                if (msg.payload.files && msg.payload.files.length) {
+                                    detailRepoFiles.innerHTML = msg.payload.files.map(f => '<div class="file-stack-item">' + f + '</div>').join('');
+                                } else {
+                                    detailRepoFiles.innerHTML = '<div style="color:var(--text-muted); padding:4px;">No files found</div>';
+                                }
+                            }
+                            break;
+
                         case 'renderSearchQueryDataset':
                             currentSearchResults = msg.payload || [];
                             const outputBox = document.getElementById('searchFrameOutput');
-                            outputBox.innerHTML = msg.payload.map((r, i) => `
-                                <div class="search-item-card" onclick="renderTargetSelectionCardByIndex(${i})">
-                                    <b>\${r.name}</b> <span class="meta-badge">\${r.visibility}</span>
-                                    <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">\${r.link}</div>
-                                </div>
-                            `).join('');
+                            outputBox.innerHTML = msg.payload.map((r, i) => 
+                                '<div class="search-item-card" onclick="renderTargetSelectionCardByIndex(' + i + ')">' +
+                                    '<b>' + r.name + '</b> <span class="meta-badge">' + r.visibility + '</span>' +
+                                    '<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">' + r.link + '</div>' +
+                                '</div>'
+                            ).join('');
                             break;
 
                         case 'syncDiagnosticsTelemetry':
@@ -346,14 +374,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                 let symbol = '○';
                                 if (s.state === 'completed') { styleCls = 'state-completed'; symbol = '✓'; }
                                 else if (s.state === 'active') { styleCls = 'state-running'; symbol = '●'; }
-                                return `
-                                    <div class="pipe-step-row \${styleCls}">
-                                        <div class="pipe-dot-icon">\${symbol}</div>
-                                        <div>
-                                            <div style="font-weight:600;">\${s.title}</div>
-                                            <div style="font-size:9px; color:var(--text-muted);">\${s.desc}</div>
-                                        </div>
-                                    </div>`;
+                                return '<div class="pipe-step-row ' + styleCls + '">' +
+                                    '<div class="pipe-dot-icon">' + symbol + '</div>' +
+                                    '<div>' +
+                                        '<div style="font-weight:600;">' + s.title + '</div>' +
+                                        '<div style="font-size:9px; color:var(--text-muted);">' + s.desc + '</div>' +
+                                    '</div>' +
+                                '</div>';
                             }).join('');
                             break;
                     }
@@ -363,23 +390,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     const repo = currentSearchResults[idx];
                     if (!repo) return;
                     renderTargetSelectionCard(repo);
+                    vscode.postMessage({
+                        command: 'fetchRepoFiles',
+                        owner: repo.owner,
+                        name: repo.name,
+                        branch: repo.branch
+                    });
                 }
 
                 function renderTargetSelectionCard(repo) {
                     const card = document.getElementById('searchDetailCard');
                     card.style.display = 'block';
-                    card.innerHTML = `
-                        <div class="form-label" style="color:var(--accent);">Focused Upstream Repository</div>
-                        <div style="font-weight:bold; font-size:13px; margin-bottom:4px;">\${repo.name}</div>
-                        <div style="font-size:11px;"><b>Target Branch:</b> \${repo.branch}</div>
-                        <div style="font-size:11px; margin-bottom:8px;"><b>Scope Matrix:</b> \${repo.visibility}</div>
-                        <div class="btn-row">
-                            <button id="btnSearchOpenLink" class="btn btn-secondary" style="font-size:10px; padding:4px;">Open GitHub</button>
-                            <button id="btnSearchClone" class="btn btn-primary" style="font-size:10px; padding:4px;">Clone Target</button>
-                        </div>`;
+                    card.innerHTML = 
+                        '<div class="form-label" style="color:var(--accent);">Focused Upstream Repository</div>' +
+                        '<div style="font-weight:bold; font-size:13px; margin-bottom:4px;">' + repo.name + '</div>' +
+                        '<div style="font-size:11px; margin-bottom:4px;"><b>Scope Matrix:</b> ' + repo.visibility + '</div>' +
+                        '<div style="font-size:11px; margin-bottom:4px;"><b>Target Branch:</b> ' + repo.branch + '</div>' +
+                        '<div class="form-label" style="margin-top:8px; margin-bottom:4px;">Repository Files</div>' +
+                        '<div id="detailRepoFiles" class="file-scroll-stack" style="max-height:85px; margin-bottom:12px;">Loading files...</div>' +
+                        '<div class="btn-row">' +
+                            '<button id="btnSearchCancel" class="btn btn-secondary" style="font-size:10px; padding:4px;">Cancel</button>' +
+                            '<button id="btnSearchClone" class="btn btn-primary" style="font-size:10px; padding:4px;">Clone Target</button>' +
+                        '</div>';
                     
-                    document.getElementById('btnSearchOpenLink').onclick = () => {
-                        vscode.postMessage({command:'openExternalUrl', url: repo.link});
+                    document.getElementById('btnSearchCancel').onclick = () => {
+                        card.style.display = 'none';
                     };
                     document.getElementById('btnSearchClone').onclick = () => {
                         vscode.postMessage({command:'triggerClone', payload: repo.link});

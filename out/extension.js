@@ -5,15 +5,113 @@ const vscode = require("vscode");
 const cp = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
 const SidebarProvider_1 = require("./SidebarProvider");
 let statusBarBtn;
 let pipelineRunningFlag = false;
+let cachedGitHubRepos = [];
 const sampleMockCacheDatabase = [
-    { name: "git-buddy", branch: "main", visibility: "Public", link: "https://github.com/SANJAY-N0/git-buddy.git" },
-    { name: "campus-navigation-system", branch: "develop", visibility: "Private", link: "https://github.com/SANJAY-N0/campus-navigation-system.git" },
-    { name: "omnichannel-chat-automation", branch: "main", visibility: "Private", link: "https://github.com/SANJAY-N0/omnichannel-chat-automation.git" },
-    { name: "pet-filament-recycler", branch: "master", visibility: "Public", link: "https://github.com/SANJAY-N0/pet-filament-recycler.git" }
+    { name: "git-buddy", branch: "main", visibility: "Public", link: "https://github.com/SANJAY-N0/git-buddy.git", owner: "SANJAY-N0" },
+    { name: "campus-navigation-system", branch: "develop", visibility: "Private", link: "https://github.com/SANJAY-N0/campus-navigation-system.git", owner: "SANJAY-N0" },
+    { name: "omnichannel-chat-automation", branch: "main", visibility: "Private", link: "https://github.com/SANJAY-N0/omnichannel-chat-automation.git", owner: "SANJAY-N0" },
+    { name: "pet-filament-recycler", branch: "master", visibility: "Public", link: "https://github.com/SANJAY-N0/pet-filament-recycler.git", owner: "SANJAY-N0" }
 ];
+async function fetchGitHubRepos(token) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'api.github.com',
+            path: '/user/repos?per_page=100&sort=updated',
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'VSCode-GitBuddy-Extension',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        };
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        const repos = JSON.parse(data);
+                        resolve(repos.map((r) => ({
+                            name: r.name,
+                            fullName: r.full_name,
+                            branch: r.default_branch || 'main',
+                            visibility: r.private ? 'Private' : 'Public',
+                            link: r.html_url,
+                            owner: r.owner.login
+                        })));
+                    }
+                    catch (e) {
+                        reject(e);
+                    }
+                }
+                else {
+                    reject(new Error(`Request failed with status code ${res.statusCode}`));
+                }
+            });
+        });
+        req.on('error', (e) => reject(e));
+        req.end();
+    });
+}
+async function fetchRepoFiles(token, owner, repoName, branch) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'api.github.com',
+            path: `/repos/${owner}/${repoName}/git/trees/${branch}?recursive=1`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'VSCode-GitBuddy-Extension',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        };
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        const treeData = JSON.parse(data);
+                        if (treeData.tree && Array.isArray(treeData.tree)) {
+                            // Filter only file blobs (type === 'blob') and limit to e.g. 50 files for UI performance
+                            const files = treeData.tree
+                                .filter((item) => item.type === 'blob')
+                                .map((item) => item.path);
+                            resolve(files);
+                        }
+                        else {
+                            resolve([]);
+                        }
+                    }
+                    catch (e) {
+                        resolve([]);
+                    }
+                }
+                else {
+                    resolve([]);
+                }
+            });
+        });
+        req.on('error', (e) => resolve([]));
+        req.end();
+    });
+}
+async function getOrFetchRepos(token) {
+    if (cachedGitHubRepos.length > 0) {
+        return cachedGitHubRepos;
+    }
+    try {
+        cachedGitHubRepos = await fetchGitHubRepos(token);
+        return cachedGitHubRepos;
+    }
+    catch {
+        return sampleMockCacheDatabase;
+    }
+}
 function activate(context) {
     const sidebarProvider = new SidebarProvider_1.SidebarProvider(context.extensionUri, context);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('git-buddy-sidebar', sidebarProvider));
@@ -43,6 +141,10 @@ function activate(context) {
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('git-buddy.cloneRepoAction', async (repoUrl) => {
+        const confirm = await vscode.window.showInformationMessage('Confirm repository clone? This will clone the upstream repository.', { modal: true }, 'Confirm', 'Cancel');
+        if (confirm !== 'Confirm') {
+            return;
+        }
         const targetUri = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: 'Select Destination Folder' });
         if (!targetUri || targetUri.length === 0)
             return;
@@ -60,10 +162,38 @@ function activate(context) {
             }
         });
     }));
-    context.subscriptions.push(vscode.commands.registerCommand('git-buddy.executeSearchFilter', (query) => {
+    context.subscriptions.push(vscode.commands.registerCommand('git-buddy.executeSearchFilter', async (query) => {
         const filterToken = (query || '').toLowerCase();
-        const matches = sampleMockCacheDatabase.filter(r => r.name.toLowerCase().includes(filterToken));
+        let repos = sampleMockCacheDatabase;
+        try {
+            const session = await vscode.authentication.getSession('github', ['repo', 'user'], { createIfNone: false });
+            if (session) {
+                repos = await getOrFetchRepos(session.accessToken);
+            }
+        }
+        catch { }
+        const matches = repos.filter(r => r.name.toLowerCase().includes(filterToken));
         sidebarProvider.sendJsonData('renderSearchQueryDataset', matches);
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('git-buddy.fetchRepoFilesAction', async (payload) => {
+        try {
+            if (!payload.owner) {
+                // Mock files for offline mode
+                sidebarProvider.sendJsonData('renderRepoFilesDetails', { files: ['index.html', 'src/main.js', 'package.json', 'README.md'] });
+                return;
+            }
+            const session = await vscode.authentication.getSession('github', ['repo', 'user'], { createIfNone: false });
+            if (session) {
+                const files = await fetchRepoFiles(session.accessToken, payload.owner, payload.name, payload.branch);
+                sidebarProvider.sendJsonData('renderRepoFilesDetails', { files: files });
+            }
+            else {
+                sidebarProvider.sendJsonData('renderRepoFilesDetails', { files: [] });
+            }
+        }
+        catch {
+            sidebarProvider.sendJsonData('renderRepoFilesDetails', { files: [] });
+        }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('git-buddy.refreshRepoDiagnostics', async () => {
         const folders = vscode.workspace.workspaceFolders;
@@ -103,7 +233,15 @@ function activate(context) {
             const session = await vscode.authentication.getSession('github', ['repo', 'user'], { createIfNone: true });
             if (session) {
                 vscode.window.showInformationMessage(`✅ Connected successfully as @${session.account.label}!`);
-                sidebarProvider.sendJsonData('renderSettingsSessionProfile', { authenticated: true, login: session.account.label, avatar: `https://github.com/${session.account.label}.png`, count: sampleMockCacheDatabase.length });
+                cachedGitHubRepos = []; // reset cached repos to force fetch
+                const repos = await getOrFetchRepos(session.accessToken);
+                sidebarProvider.sendJsonData('renderSettingsSessionProfile', {
+                    authenticated: true,
+                    login: session.account.label,
+                    avatar: `https://github.com/${session.account.label}.png`,
+                    count: repos.length,
+                    repos: repos
+                });
                 refreshHeaderTelemetry(sidebarProvider);
                 return true;
             }
@@ -216,6 +354,18 @@ async function refreshHeaderTelemetry(sidebarProvider) {
         if (session) {
             authCheck = true;
             nameHandle = '@' + session.account.label;
+            getOrFetchRepos(session.accessToken).then(repos => {
+                sidebarProvider.sendJsonData('renderSettingsSessionProfile', {
+                    authenticated: true,
+                    login: session.account.label,
+                    avatar: `https://github.com/${session.account.label}.png`,
+                    count: repos.length,
+                    repos: repos
+                });
+            }).catch(() => { });
+        }
+        else {
+            sidebarProvider.sendJsonData('renderSettingsSessionProfile', { authenticated: false });
         }
     }
     catch { }
