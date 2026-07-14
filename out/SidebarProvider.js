@@ -220,6 +220,8 @@ class SidebarProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 let lastAuthSessionState = false;
+                let currentSearchResults = [];
+                let currentWorkspaceFiles = [];
 
                 switchFrameView('${activeTab}');
 
@@ -296,13 +298,28 @@ class SidebarProvider {
                             break;
 
                         case 'renderSearchQueryDataset':
+                            currentSearchResults = msg.payload || [];
                             const outputBox = document.getElementById('searchFrameOutput');
-                            outputBox.innerHTML = msg.payload.map(r => \`
-                                <div class="search-item-card" onclick="renderTargetSelectionCard(\\\${JSON.stringify(r)})">
-                                    <b>\\\${r.name}</b> <span class="meta-badge">\\\${r.visibility}</span>
-                                    <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">\\\${r.link}</div>
-                                </div>
-                            \`).join('');
+                            outputBox.innerHTML = msg.payload.map((r, i) => `
+            < div;
+        class {
+        }
+        "search-item-card";
+        onclick = "renderTargetSelectionCardByIndex(${i})" >
+        ;
+        $;
+        {
+            r.name;
+        }
+        /b> <span class="meta-badge">\${r.visibility}</span >
+            style;
+        "font-size:10px; color:var(--text-muted); margin-top:2px;" > ;
+        $;
+        {
+            r.link;
+        }
+        /div>
+            < /div> `).join('');
                             break;
 
                         case 'syncDiagnosticsTelemetry':
@@ -310,8 +327,8 @@ class SidebarProvider {
                             document.getElementById('curBranch').innerText = msg.payload.branch;
                             document.getElementById('curVisibility').innerText = msg.payload.visibility;
                             
-                            const fileBox = document.getElementById('curFilesList');
-                            fileBox.innerHTML = msg.payload.files.length ? msg.payload.files.map(f => '<div class="file-stack-item">' + f + '</div>').join('') : '<div style="color:var(--text-muted); padding:4px;">No files tracked</div>';
+                            currentWorkspaceFiles = msg.payload.files || [];
+                            renderFilteredWorkspaceFiles();
                             
                             document.getElementById('curCommitTitle').innerText = msg.payload.latestCommitMsg || "No commit records";
                             const commBox = document.getElementById('curCommitFiles');
@@ -336,36 +353,75 @@ class SidebarProvider {
                                 let symbol = '○';
                                 if (s.state === 'completed') { styleCls = 'state-completed'; symbol = '✓'; }
                                 else if (s.state === 'active') { styleCls = 'state-running'; symbol = '●'; }
-                                return \`
-                                    <div class="pipe-step-row \\\${styleCls}">
-                                        <div class="pipe-dot-icon">\\\${symbol}</div>
-                                        <div>
-                                            <div style="font-weight:600;">\\\${s.title}</div>
-                                            <div style="font-size:9px; color:var(--text-muted);">\\\${s.desc}</div>
-                                        </div>
-                                    </div>\`;
-                            }).join('');
-                            break;
-                    }
-                });
-
-                function renderTargetSelectionCard(repo) {
-                    const card = document.getElementById('searchDetailCard');
-                    card.style.display = 'block';
-                    card.innerHTML = \`
+                                return `
+            < div;
+        class {
+        }
+        "pipe-step-row \${styleCls}" >
+            class {
+            };
+        "pipe-dot-icon" > ;
+        $;
+        {
+            symbol;
+        }
+        /div>
+            < div >
+            style;
+        "font-weight:600;" > ;
+        $;
+        {
+            s.title;
+        }
+        /div>
+            < div;
+        style = "font-size:9px; color:var(--text-muted);" > ;
+        $;
+        {
+            s.desc;
+        }
+        /div>
+            < /div>
+            < /div>`;;
+    }
+}
+exports.SidebarProvider = SidebarProvider;
+;
+function renderTargetSelectionCardByIndex(idx) {
+    const repo = currentSearchResults[idx];
+    if (!repo)
+        return;
+    renderTargetSelectionCard(repo);
+}
+function renderTargetSelectionCard(repo) {
+    const card = document.getElementById('searchDetailCard');
+    card.style.display = 'block';
+    card.innerHTML = `
                         <div class="form-label" style="color:var(--accent);">Focused Upstream Repository</div>
                         <div style="font-weight:bold; font-size:13px; margin-bottom:4px;">\${repo.name}</div>
                         <div style="font-size:11px;"><b>Target Branch:</b> \${repo.branch}</div>
                         <div style="font-size:11px; margin-bottom:8px;"><b>Scope Matrix:</b> \${repo.visibility}</div>
                         <div class="btn-row">
-                            <button class="btn btn-secondary" style="font-size:10px; padding:4px;" onclick="vscode.postMessage({command:'openExternalUrl', url:'\${repo.link}'})">Open GitHub</button>
-                            <button class="btn btn-primary" style="font-size:10px; padding:4px;" onclick="vscode.postMessage({command:'triggerClone', payload:'\${repo.link}'})">Clone Target</button>
-                        </div>\`;
-                }
-            </script>
-        </body>
-        </html>`;
-    }
+                            <button id="btnSearchOpenLink" class="btn btn-secondary" style="font-size:10px; padding:4px;">Open GitHub</button>
+                            <button id="btnSearchClone" class="btn btn-primary" style="font-size:10px; padding:4px;">Clone Target</button>
+                        </div>`;
+    document.getElementById('btnSearchOpenLink').onclick = () => {
+        vscode.postMessage({ command: 'openExternalUrl', url: repo.link });
+    };
+    document.getElementById('btnSearchClone').onclick = () => {
+        vscode.postMessage({ command: 'triggerClone', payload: repo.link });
+    };
 }
-exports.SidebarProvider = SidebarProvider;
+function renderFilteredWorkspaceFiles() {
+    const query = (document.getElementById('curFilesSearch').value || '').toLowerCase();
+    const filtered = currentWorkspaceFiles.filter(f => f.toLowerCase().includes(query));
+    const fileBox = document.getElementById('curFilesList');
+    fileBox.innerHTML = filtered.length ? filtered.map(f => '<div class="file-stack-item">' + f + '</div>').join('') : '<div style="color:var(--text-muted); padding:4px;">No files matched</div>';
+}
+function filterCurFiles() {
+    renderFilteredWorkspaceFiles();
+}
+/script>
+    < /body>
+    < /html>`;;
 //# sourceMappingURL=SidebarProvider.js.map

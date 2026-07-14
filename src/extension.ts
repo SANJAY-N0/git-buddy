@@ -74,8 +74,10 @@ export function activate(context: vscode.ExtensionContext) {
                 url = (await execGitFast(['remote', 'get-url', 'origin'], rootPath)).trim();
                 visibility = url.includes('private') ? 'Private' : 'Public';
             } catch {}
-            const filesLog = await execGitFast(['ls-files'], rootPath);
-            const files = filesLog.split('\n').map(f => f.trim()).filter(f => f.length > 0);
+            const filesLog = await execGitFast(['ls-files', '--others', '--cached', '--exclude-standard'], rootPath);
+            const files = filesLog.split('\n')
+                .map(f => f.trim())
+                .filter(f => f.length > 0 && !f.startsWith('node_modules/') && !f.startsWith('.git/') && !f.startsWith('out/') && !f.startsWith('.gemini/') && f !== 'package-lock.json');
             let latestCommitMsg = "No logged milestones";
             let latestCommitFiles: string[] = [];
             try {
