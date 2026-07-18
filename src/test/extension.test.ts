@@ -257,4 +257,98 @@ describe('Git Buddy Extension Tests', () => {
             assert.strictEqual(commitStep.state, 'waiting');
         });
     });
+
+    describe('Undo, Redo, and Suggest Commit Message Commands', () => {
+        beforeEach(() => {
+            mockState.workspaceFolders = [{ uri: vscode.Uri.file('/my/project') }];
+            fsExistsStub.returns(true); // .git exists
+        });
+
+        it('should successfully undo the last commit via Soft Reset and cache its message', async () => {
+            let loggedMsg = "feat: add premium logging";
+            cpStub.callsFake((cmd, args, options, callback) => {
+                if (args && args.includes('log') && args.includes('--pretty=%B')) {
+                    callback(null, loggedMsg, '');
+                } else {
+                    callback(null, 'mock stdout', '');
+                }
+            });
+
+            activate(mockContext);
+
+            let sentMessages: any[] = [];
+            const sendJsonStub = sinon.stub(SidebarProvider.prototype, 'sendJsonData');
+            sendJsonStub.callsFake((command: string, payload: any) => {
+                sentMessages.push({ command, payload });
+            });
+
+            const undoCommand = mockState.commands['git-buddy.undoCommit'];
+            await undoCommand();
+
+            // Verify reset command was run
+            const resetCalled = cpStub.getCalls().some(call => call.args[1] && call.args[1].includes('reset') && call.args[1].includes('--soft'));
+            assert.ok(resetCalled, 'git reset --soft should have been called');
+
+            // Verify message cached in workspaceState
+            assert.strictEqual(mockState.workspaceState.get('lastUndoneCommitMsg'), loggedMsg);
+
+            // Verify webview sync message was sent
+            const syncMsg = sentMessages.find(m => m.command === 'syncUndoneCommit');
+            assert.ok(syncMsg, 'syncUndoneCommit message should have been sent to webview');
+            assert.strictEqual(syncMsg.payload.lastUndoneCommitMsg, loggedMsg);
+        });
+
+        it('should successfully redo the commit using cached message', async () => {
+            mockState.workspaceState.set('lastUndoneCommitMsg', 'feat: initial redo mock message');
+            activate(mockContext);
+
+            let sentMessages: any[] = [];
+            const sendJsonStub = sinon.stub(SidebarProvider.prototype, 'sendJsonData');
+            sendJsonStub.callsFake((command: string, payload: any) => {
+                sentMessages.push({ command, payload });
+            });
+
+            const redoCommand = mockState.commands['git-buddy.redoCommit'];
+            await redoCommand();
+
+            // Verify git add and commit were called
+            const addCalled = cpStub.getCalls().some(call => call.args[1] && call.args[1].includes('add'));
+            const commitCalled = cpStub.getCalls().some(call => call.args[1] && call.args[1].includes('commit') && call.args[1].includes('feat: initial redo mock message'));
+            assert.ok(addCalled, 'git add should have been called');
+            assert.ok(commitCalled, 'git commit should have been called');
+
+            // Verify workspaceState cleared
+            assert.strictEqual(mockState.workspaceState.get('lastUndoneCommitMsg'), undefined);
+
+            // Verify webview sync message cleared
+            const syncMsg = sentMessages.find(m => m.command === 'syncUndoneCommit');
+            assert.ok(syncMsg, 'syncUndoneCommit message should have been sent');
+            assert.strictEqual(syncMsg.payload.lastUndoneCommitMsg, undefined);
+        });
+
+        it('should suggest commit messages based on porcelain status files', async () => {
+            cpStub.callsFake((cmd, args, options, callback) => {
+                if (args && args.includes('status') && args.includes('--porcelain')) {
+                    callback(null, ' M src/extension.ts\n M src/test/extension.test.ts', '');
+                } else {
+                    callback(null, 'mock stdout', '');
+                }
+            });
+
+            activate(mockContext);
+
+            let sentMessages: any[] = [];
+            const sendJsonStub = sinon.stub(SidebarProvider.prototype, 'sendJsonData');
+            sendJsonStub.callsFake((command: string, payload: any) => {
+                sentMessages.push({ command, payload });
+            });
+
+            const suggestCommand = mockState.commands['git-buddy.suggestCommitMessage'];
+            await suggestCommand();
+
+            const suggestMsg = sentMessages.find(m => m.command === 'suggestedCommitMsg');
+            assert.ok(suggestMsg, 'suggestedCommitMsg message should be sent');
+            assert.ok(suggestMsg.payload.message.includes('test & feat:'), 'suggested message should contain test & feat');
+        });
+    });
 });

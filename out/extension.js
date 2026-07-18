@@ -503,20 +503,19 @@ function activate(context) {
         }
         const rootPath = folders[0].uri.fsPath;
         try {
-            const statusOut = (await execGitFast(['status', '--porcelain'], rootPath)).trim();
-            if (!statusOut) {
+            const statusOut = (await execGitFast(['status', '--porcelain'], rootPath));
+            if (!statusOut.trim()) {
                 sidebarProvider.sendJsonData('suggestedCommitMsg', { message: 'chore: workspace incremental updates' });
                 return;
             }
-            const lines = statusOut.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const lines = statusOut.split('\n').filter(l => l.length > 3);
             let hasSrc = false;
             let hasTest = false;
             let hasPackage = false;
             let hasReadme = false;
             let changedFilesList = [];
             for (const line of lines) {
-                const match = line.match(/^(?:[MADRCU\?\s]{2})\s+(.+)$/);
-                const file = match ? match[1] : '';
+                const file = line.substring(3).trim();
                 if (file) {
                     const baseName = path.basename(file);
                     changedFilesList.push(baseName);
