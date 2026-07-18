@@ -49,6 +49,28 @@ class SidebarProvider {
                         await vscode.commands.executeCommand('git-buddy.refreshRepoDiagnostics');
                     }
                     break;
+                case 'themeChanged':
+                    await this._context.globalState.update('selectedTheme', data.theme);
+                    break;
+                case 'logoutGitHub':
+                    await vscode.commands.executeCommand('git-buddy.logoutGitHubAction');
+                    break;
+                case 'runOneClickPush':
+                    await vscode.commands.executeCommand('git-buddy.oneClickPush', data.commitMessage);
+                    break;
+                case 'requestCommitSuggestion':
+                    await vscode.commands.executeCommand('git-buddy.suggestCommitMessage');
+                    break;
+                case 'triggerUndoCommit':
+                    await vscode.commands.executeCommand('git-buddy.undoCommit');
+                    break;
+                case 'triggerRedoCommit':
+                    await vscode.commands.executeCommand('git-buddy.redoCommit');
+                    break;
+                case 'webviewReady':
+                    await vscode.commands.executeCommand('git-buddy.refreshRepoDiagnostics');
+                    await vscode.commands.executeCommand('git-buddy.refreshHeaderTelemetryAction');
+                    break;
             }
         });
     }
@@ -59,12 +81,16 @@ class SidebarProvider {
     }
     _getHtmlForWebview(webview) {
         const activeTab = this._context.workspaceState.get('activeTab') || 'search';
+        const selectedTheme = this._context.globalState.get('selectedTheme') || 'system';
         return `
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
                 :root {
                     --bg-card: var(--vscode-sideBar-background, #1e1e2e);
@@ -78,9 +104,23 @@ class SidebarProvider {
                     --yellow-running: #f9e2af;
                 }
                 body {
-                    padding: 10px; font-family: var(--vscode-font-family, sans-serif);
+                    padding: 10px; font-family: 'Plus Jakarta Sans', var(--vscode-font-family), sans-serif;
                     background-color: var(--bg-card); color: var(--text-main); margin: 0;
                     box-sizing: border-box; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+                }
+                body.theme-light {
+                    --bg-card: #f3f4f6;
+                    --bg-panel: #ffffff;
+                    --text-main: #1f2937;
+                    --text-muted: #6b7280;
+                    --border-color: #e5e7eb;
+                }
+                body.theme-dark {
+                    --bg-card: #1e1e2e;
+                    --bg-panel: #181825;
+                    --text-main: #cdd6f4;
+                    --text-muted: #9399b2;
+                    --border-color: #313244;
                 }
                 
                 /* 🎯 Top Diagnostic Tracking Header */
@@ -166,11 +206,83 @@ class SidebarProvider {
                 .pipe-dot-icon { margin-right: 8px; font-weight: bold; width: 12px; text-align: center; }
                 .state-completed { color: var(--green-success); }
                 .state-running { color: var(--yellow-running); animation: pulseText 1.5s infinite alternate; }
+                .state-failed { color: #e06c75; }
                 .state-waiting { color: #585b70; }
                 @keyframes pulseText { from { opacity: 0.5; } to { opacity: 1; } }
+
+                .repo-browser-row { display: grid; grid-template-columns: 20px 1.5fr 1.5fr 1fr; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border-color); font-size: 11px; cursor: pointer; }
+                .repo-browser-row:hover { background: rgba(255, 255, 255, 0.05); }
+                .repo-browser-row.back-row { background: rgba(255, 255, 255, 0.02); }
+                .repo-icon { font-size: 12px; display: flex; align-items: center; justify-content: center; }
+                .repo-name { color: var(--text-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
+                .repo-name.dir-link { color: #58a6ff; font-weight: 500; }
+                .repo-name.dir-link:hover { text-decoration: underline; }
+                .repo-commit { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; padding-left: 8px; }
+                .repo-time { color: var(--text-muted); text-align: right; font-size: 10px; }
+                .status-changed { color: #f9e2af; font-family: monospace; border-left: 2px solid #f9e2af; padding-left: 6px; }
+
+                /* 🍞 Modern Glassmorphism Toast Styles */
+                .toast-notification {
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 500;
+                    color: #ffffff;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    pointer-events: auto;
+                    transform: translateY(20px);
+                    opacity: 0;
+                    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+                    backdrop-filter: blur(8px);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    width: calc(100% - 24px);
+                    box-sizing: border-box;
+                }
+                .toast-notification.show {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+                .toast-notification.success {
+                    background: rgba(166, 227, 161, 0.25);
+                    border-color: #a6e3a1;
+                    color: #a6e3a1;
+                }
+                .toast-notification.error {
+                    background: rgba(224, 108, 117, 0.25);
+                    border-color: #e06c75;
+                    color: #e06c75;
+                }
+                .toast-notification.warning {
+                    background: rgba(249, 226, 175, 0.25);
+                    border-color: #f9e2af;
+                    color: #f9e2af;
+                }
+                .toast-notification.info {
+                    background: rgba(137, 180, 250, 0.25);
+                    border-color: #89b4fa;
+                    color: #89b4fa;
+                }
+                .toast-close-btn {
+                    background: none;
+                    border: none;
+                    color: inherit;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 4px;
+                    line-height: 1;
+                    opacity: 0.7;
+                }
+                .toast-close-btn:hover {
+                    opacity: 1;
+                }
             </style>
         </head>
-        <body>
+        <body class="theme-${selectedTheme}">
 
             <!-- Diagnostic Header Row -->
             <div class="diagnostic-header">
@@ -225,6 +337,120 @@ class SidebarProvider {
                 let lastAuthSessionState = false;
                 let currentSearchResults = [];
                 let currentWorkspaceFiles = [];
+                let repoBrowserCurrentPath = "";
+                let repoBrowserAllFiles = [];
+                let curBrowserCurrentPath = "";
+                let curBrowserAllFiles = [];
+                let cachedUserRepos = [];
+                window.focusedRepoSelected = null;
+
+                function saveWebviewState() {
+                    const state = {
+                        activeTab: document.querySelector('.circle-nav-btn.active')?.id.replace('btn-', '') || 'search',
+                        searchQuery: document.getElementById('workspaceFilterQuery')?.value || '',
+                        repoFilesFilterQuery: document.getElementById('repoFilesFilterQuery')?.value || '',
+                        selectedRepo: window.focusedRepoSelected || null,
+                        repoBrowserCurrentPath: repoBrowserCurrentPath,
+                        repoBrowserAllFiles: repoBrowserAllFiles,
+                        curBrowserCurrentPath: curBrowserCurrentPath,
+                        curBrowserAllFiles: curBrowserAllFiles,
+                        theme: document.getElementById('themeSelector')?.value || 'system',
+                        newRepoName: document.getElementById('newRepoName')?.value || '',
+                        newRepoBranch: document.getElementById('newRepoBranch')?.value || 'main',
+                        newRepoVisibility: document.getElementById('newRepoVisibility')?.value || 'Public',
+                        newRepoReadme: document.getElementById('newRepoReadme')?.checked || false,
+                        pipelineCommitMessage: document.getElementById('pipelineCommitMessage')?.value || '',
+                        lastUndoneCommitMsg: document.getElementById('btnRedoCommit')?.getAttribute('title')?.replace('Redo commit: "', '')?.replace('"', '') || ''
+                    };
+                    vscode.setState(state);
+                }
+
+                function restoreWebviewState() {
+                    const state = vscode.getState();
+                    if (!state) return;
+                    
+                    if (state.theme) {
+                        const selector = document.getElementById('themeSelector');
+                        if (selector) selector.value = state.theme;
+                        changeTheme(state.theme);
+                    }
+                    
+                    if (document.getElementById('newRepoName')) document.getElementById('newRepoName').value = state.newRepoName || '';
+                    if (document.getElementById('newRepoBranch')) document.getElementById('newRepoBranch').value = state.newRepoBranch || 'main';
+                    if (document.getElementById('newRepoVisibility')) document.getElementById('newRepoVisibility').value = state.newRepoVisibility || 'Public';
+                    if (document.getElementById('newRepoReadme')) document.getElementById('newRepoReadme').checked = state.newRepoReadme !== false;
+                    
+                    if (state.pipelineCommitMessage) {
+                        const pm = document.getElementById('pipelineCommitMessage');
+                        if (pm) pm.value = state.pipelineCommitMessage;
+                    }
+                    if (state.lastUndoneCommitMsg) {
+                        const rb = document.getElementById('btnRedoCommit');
+                        if (rb) {
+                            rb.style.display = 'inline-flex';
+                            rb.setAttribute('title', 'Redo commit: "' + state.lastUndoneCommitMsg + '"');
+                        }
+                    }
+
+                    if (state.activeTab) {
+                        switchFrameView(state.activeTab);
+                    }
+                    
+                    if (state.searchQuery) {
+                        const searchInput = document.getElementById('workspaceFilterQuery');
+                        if (searchInput) {
+                            searchInput.value = state.searchQuery;
+                            dispatchSearchTokenUpdate();
+                        }
+                    }
+                    
+                    if (state.selectedRepo) {
+                        window.focusedRepoSelected = state.selectedRepo;
+                        renderTargetSelectionCard(state.selectedRepo);
+                        repoBrowserAllFiles = state.repoBrowserAllFiles || [];
+                        repoBrowserCurrentPath = state.repoBrowserCurrentPath || "";
+                        renderRepoBrowser();
+                        
+                        if (state.repoFilesFilterQuery) {
+                            const repoFilter = document.getElementById('repoFilesFilterQuery');
+                            if (repoFilter) {
+                                repoFilter.value = state.repoFilesFilterQuery;
+                                renderRepoBrowser();
+                            }
+                        }
+                    }
+
+                    if (state.curBrowserAllFiles) {
+                        curBrowserAllFiles = state.curBrowserAllFiles || [];
+                        curBrowserCurrentPath = state.curBrowserCurrentPath || "";
+                        renderCurBrowser();
+                    }
+                }
+
+                function changeTheme(theme) {
+                    document.body.className = '';
+                    if (theme === 'light') {
+                        document.body.classList.add('theme-light');
+                    } else if (theme === 'dark') {
+                        document.body.classList.add('theme-dark');
+                    } else {
+                        document.body.classList.add('theme-system');
+                    }
+                    saveWebviewState();
+                    vscode.postMessage({ command: 'themeChanged', theme: theme });
+                }
+
+                function validateNewRepoName() {
+                    const name = document.getElementById('newRepoName').value.trim().toLowerCase();
+                    const warning = document.getElementById('newRepoWarning');
+                    const exists = cachedUserRepos.some(r => r.name.toLowerCase() === name);
+                    if (exists) {
+                        warning.style.display = 'block';
+                    } else {
+                        warning.style.display = 'none';
+                    }
+                    saveWebviewState();
+                }
 
                 switchFrameView('${activeTab}');
 
@@ -240,7 +466,6 @@ class SidebarProvider {
                         targetPanel.classList.add('active');
                     }
 
-                    // 🎯 Clean Alignment Guardrail: Search Box Visibility Logic matches requirements
                     const searchBar = document.getElementById('globalSearchBarFrame');
                     if (tabId === 'search') {
                         searchBar.style.display = 'block';
@@ -249,11 +474,13 @@ class SidebarProvider {
                     }
 
                     vscode.postMessage({ command: 'tabChanged', tabId: tabId });
+                    saveWebviewState();
                 }
 
                 function dispatchSearchTokenUpdate() {
                     const val = document.getElementById('workspaceFilterQuery').value;
                     vscode.postMessage({ command: 'searchQueryChanged', query: val });
+                    saveWebviewState();
                 }
 
                 function triggerCancelWorkflow() {
@@ -264,18 +491,127 @@ class SidebarProvider {
                     const name = document.getElementById('newRepoName').value.trim();
                     const branch = document.getElementById('newRepoBranch').value.trim();
                     const readme = document.getElementById('newRepoReadme').checked;
-                    if(!name) return;
-                    vscode.postMessage({ command: 'triggerCreateRepo', payload: { name, branch, readme } });
+                    const visibility = document.getElementById('newRepoVisibility').value;
+                    const exists = cachedUserRepos.some(r => r.name.toLowerCase() === name.toLowerCase());
+                    if(!name || exists) return;
+                    vscode.postMessage({ command: 'triggerCreateRepo', payload: { name, branch, readme, visibility } });
+                }
+
+                function renderSettingsRepoList(reposList) {
+                    const settingsRepoList = document.getElementById('settingsRepoList');
+                    if (!settingsRepoList) return;
+                    if (reposList && reposList.length) {
+                        settingsRepoList.innerHTML = reposList.map(r => {
+                            const lang = (r.name.includes('buddy') || r.name.includes('ts')) ? 'TypeScript' :
+                                         (r.name.includes('navigation') ? 'Java' :
+                                         (r.name.includes('automation') ? 'Python' : 'JavaScript'));
+                            const langColor = lang === 'TypeScript' ? '#3178c6' :
+                                              lang === 'Java' ? '#b07219' :
+                                              lang === 'Python' ? '#3572A5' : '#f1e05a';
+                            const updatedStr = r.name.includes('buddy') ? 'Updated 20 minutes ago' :
+                                               r.name.includes('test') ? 'Updated 24 minutes ago' :
+                                               'Updated 2 days ago';
+                                               
+                            return '<div class="repo-item-row" onclick="selectRepoFromSettings(\\'' + r.name + '\\')" style="padding: 12px 8px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: flex-start; cursor: pointer;">' +
+                                '<div style="flex: 1; min-width: 0; padding-right: 8px;">' +
+                                    '<div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">' +
+                                        '<span class="repo-item-title" style="color: #58a6ff; font-weight: 600; font-size: 13px; text-decoration: none;">' + r.name + '</span>' +
+                                        '<span style="font-size: 9px; padding: 1px 6px; border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-muted); font-weight: 500; background: rgba(255,255,255,0.03);">' + r.visibility + '</span>' +
+                                    '</div>' +
+                                    '<div style="display: flex; align-items: center; gap: 10px; font-size: 10px; color: var(--text-muted);">' +
+                                        '<span style="display: inline-flex; align-items: center; gap: 4px;">' +
+                                            '<span style="width: 8px; height: 8px; border-radius: 50%; background-color: ' + langColor + ';"></span>' +
+                                            lang +
+                                        '</span>' +
+                                        '<span>' + updatedStr + '</span>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div>' +
+                                    '<button class="btn" style="font-size: 10px; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; background: #21262d; border: 1px solid var(--border-color); color: #c9d1d9;">' +
+                                        '<svg aria-hidden="true" height="12" viewBox="0 0 16 16" version="1.1" width="12" fill="currentColor"><path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25zm0 2.445L6.615 5.5a.75.75 0 01-.564.41l-3.097.45 2.24 2.184a.75.75 0 01.216.664l-.528 3.084 2.769-1.456a.75.75 0 01.698 0l2.77 1.456-.53-3.084a.75.75 0 01.216-.664l2.24-2.183-3.096-.45a.75.75 0 01-.564-.41L8 2.694z"></path></svg>' +
+                                        'Star' +
+                                    '</button>' +
+                                '</div>' +
+                            '</div>';
+                        }).join('');
+                    } else {
+                        settingsRepoList.innerHTML = '<div style="color:var(--text-muted); padding:12px; text-align:center;">No repositories found</div>';
+                    }
+                }
+
+                function filterSettingsRepos() {
+                    const query = (document.getElementById('settingsRepoQuery')?.value || '').toLowerCase();
+                    const selects = document.querySelectorAll('#authenticatedView select');
+                    const typeFilter = selects[0]?.value || 'all';
+                    const langFilter = selects[1]?.value || 'all';
+                    const sortFilter = selects[2]?.value || 'updated';
+
+                    let filtered = cachedUserRepos.filter(r => {
+                        const nameMatches = r.name.toLowerCase().includes(query);
+                        const typeMatches = typeFilter === 'all' || r.visibility.toLowerCase() === typeFilter;
+                        
+                        const lang = (r.name.includes('buddy') || r.name.includes('ts')) ? 'typescript' :
+                                     (r.name.includes('navigation') ? 'java' :
+                                     (r.name.includes('automation') ? 'python' : 'javascript'));
+                        const langMatches = langFilter === 'all' || lang === langFilter;
+                        
+                        return nameMatches && typeMatches && langMatches;
+                    });
+
+                    if (sortFilter === 'name') {
+                        filtered.sort((a, b) => a.name.localeCompare(b.name));
+                    }
+                    renderSettingsRepoList(filtered);
+                }
+
+                function selectRepoFromSettings(repoName) {
+                    const repo = cachedUserRepos.find(r => r.name === repoName);
+                    if (repo) {
+                        renderTargetSelectionCard(repo);
+                        vscode.postMessage({
+                            command: 'fetchRepoFiles',
+                            owner: repo.owner,
+                            name: repo.name,
+                            branch: repo.branch
+                        });
+                        switchFrameView('search');
+                    }
                 }
 
                 window.addEventListener('message', event => {
                     const msg = event.data;
                     switch(msg.command) {
+                        case 'showNotification':
+                            showToast(msg.payload.message, msg.payload.type);
+                            break;
+
+                        case 'suggestedCommitMsg':
+                            const commitField = document.getElementById('pipelineCommitMessage');
+                            if (commitField && msg.payload.message) {
+                                commitField.value = msg.payload.message;
+                                saveWebviewState();
+                                showToast('Commit message suggested!', 'success');
+                            }
+                            break;
+
+                        case 'syncUndoneCommit':
+                            const redoButton = document.getElementById('btnRedoCommit');
+                            if (redoButton) {
+                                if (msg.payload.lastUndoneCommitMsg) {
+                                    redoButton.style.display = 'inline-flex';
+                                    redoButton.setAttribute('title', 'Redo commit: "' + msg.payload.lastUndoneCommitMsg + '"');
+                                } else {
+                                    redoButton.style.display = 'none';
+                                    redoButton.removeAttribute('title');
+                                }
+                            }
+                            saveWebviewState();
+                            break;
+
                         case 'syncDiagnosticsHeader':
                             document.getElementById('headerRepoName').innerText = msg.payload.repoName;
                             document.getElementById('headerUserName').innerText = msg.payload.userName;
                             
-                            // 🎯 First Install Guardrail: Force Connect view screen if account lacks verification logs
                             if (!msg.payload.authenticated) {
                                 lastAuthSessionState = false;
                                 switchFrameView('setting');
@@ -295,34 +631,22 @@ class SidebarProvider {
                                 document.getElementById('githubUserHandle').innerText = '@' + msg.payload.login;
                                 document.getElementById('githubRepoCount').innerText = 'Active Repositories: ' + msg.payload.count;
                                 
-                                const settingsRepoList = document.getElementById('settingsRepoList');
-                                if (settingsRepoList) {
-                                    if (msg.payload.repos && msg.payload.repos.length) {
-                                        settingsRepoList.innerHTML = msg.payload.repos.map(r => 
-                                            '<div class="file-stack-item" style="padding: 4px; display: flex; justify-content: space-between; align-items: center;">' +
-                                                '<span><b>' + r.name + '</b> (' + r.visibility + ')</span>' +
-                                                '<span style="font-size: 9px; color: var(--text-muted);">' + r.branch + '</span>' +
-                                            '</div>'
-                                        ).join('');
-                                    } else {
-                                        settingsRepoList.innerHTML = '<div style="color:var(--text-muted); padding:4px;">No repositories found</div>';
-                                    }
-                                }
+                                cachedUserRepos = msg.payload.repos || [];
+                                validateNewRepoName();
+                                filterSettingsRepos();
                             } else {
                                 unauth.style.display = 'block';
                                 auth.style.display = 'none';
+                                cachedUserRepos = [];
+                                validateNewRepoName();
+                                renderSettingsRepoList([]);
                             }
                             break;
 
                         case 'renderRepoFilesDetails':
-                            const detailRepoFiles = document.getElementById('detailRepoFiles');
-                            if (detailRepoFiles) {
-                                if (msg.payload.files && msg.payload.files.length) {
-                                    detailRepoFiles.innerHTML = msg.payload.files.map(f => '<div class="file-stack-item">' + f + '</div>').join('');
-                                } else {
-                                    detailRepoFiles.innerHTML = '<div style="color:var(--text-muted); padding:4px;">No files found</div>';
-                                }
-                            }
+                            repoBrowserAllFiles = msg.payload.files || [];
+                            repoBrowserCurrentPath = "";
+                            renderRepoBrowser();
                             break;
 
                         case 'renderSearchQueryDataset':
@@ -341,13 +665,18 @@ class SidebarProvider {
                             document.getElementById('curBranch').innerText = msg.payload.branch;
                             document.getElementById('curVisibility').innerText = msg.payload.visibility;
                             
-                            currentWorkspaceFiles = msg.payload.files || [];
-                            renderFilteredWorkspaceFiles();
+                            curBrowserAllFiles = msg.payload.files || [];
+                            renderCurBrowser();
                             
                             document.getElementById('curCommitTitle').innerText = msg.payload.latestCommitMsg || "No commit records";
                             const commBox = document.getElementById('curCommitFiles');
                             commBox.innerHTML = msg.payload.latestCommitFiles.length ? msg.payload.latestCommitFiles.map(f => '<div class="file-stack-item">' + f + '</div>').join('') : '<div style="color:var(--text-muted); padding:4px;">-</div>';
                             
+                            const changedBox = document.getElementById('curChangedFiles');
+                            if (changedBox) {
+                                changedBox.innerHTML = msg.payload.changedFiles && msg.payload.changedFiles.length ? msg.payload.changedFiles.map(f => '<div class="file-stack-item status-changed">' + f + '</div>').join('') : '<div style="color:var(--text-muted); padding:4px;">No pending changes</div>';
+                            }
+
                             const btnOpen = document.getElementById('btnOpenGitHubExternal');
                             btnOpen.onclick = () => { if(msg.payload.url) vscode.postMessage({ command: 'openExternalUrl', url: msg.payload.url }); };
                             break;
@@ -367,6 +696,7 @@ class SidebarProvider {
                                 let symbol = '○';
                                 if (s.state === 'completed') { styleCls = 'state-completed'; symbol = '✓'; }
                                 else if (s.state === 'active') { styleCls = 'state-running'; symbol = '●'; }
+                                else if (s.state === 'failed') { styleCls = 'state-failed'; symbol = '✗'; }
                                 return '<div class="pipe-step-row ' + styleCls + '">' +
                                     '<div class="pipe-dot-icon">' + symbol + '</div>' +
                                     '<div>' +
@@ -378,6 +708,108 @@ class SidebarProvider {
                             break;
                     }
                 });
+
+                function getDirectoryContents(files, currentPath) {
+                    if (!files) return [];
+                    const contents = new Map();
+                    for (let i = 0; i < files.length; i++) {
+                        const f = files[i];
+                        if (currentPath && !f.startsWith(currentPath + "/")) continue;
+                        const relativePath = currentPath ? f.substring(currentPath.length + 1) : f;
+                        const parts = relativePath.split('/');
+                        const name = parts[0];
+                        if (parts.length > 1) {
+                            contents.set(name, { name: name, isDirectory: true, path: currentPath ? currentPath + "/" + name : name });
+                        } else {
+                            contents.set(name, { name: name, isDirectory: false, path: f });
+                        }
+                    }
+                    return Array.from(contents.values()).sort((a, b) => {
+                        if (a.isDirectory && !b.isDirectory) return -1;
+                        if (!a.isDirectory && b.isDirectory) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
+
+                function navigateRepoBrowserInto(path) {
+                    repoBrowserCurrentPath = path;
+                    renderRepoBrowser();
+                }
+
+                function navigateRepoBrowserBack() {
+                    if (!repoBrowserCurrentPath) return;
+                    const parts = repoBrowserCurrentPath.split('/');
+                    parts.pop();
+                    repoBrowserCurrentPath = parts.join('/');
+                    renderRepoBrowser();
+                }
+
+                function renderRepoBrowser() {
+                    const listContainer = document.getElementById('detailRepoFiles');
+                    if (!listContainer) return;
+
+                    if (!listContainer.hasAttribute('data-has-listener')) {
+                        listContainer.setAttribute('data-has-listener', 'true');
+                        listContainer.addEventListener('click', (e) => {
+                            const row = e.target.closest('.repo-browser-row');
+                            if (!row) return;
+                            const isDir = row.getAttribute('data-is-dir') === 'true';
+                            const path = row.getAttribute('data-path');
+                            const isBack = row.classList.contains('back-row');
+                            
+                            if (isBack) {
+                                navigateRepoBrowserBack();
+                            } else if (isDir && path) {
+                                navigateRepoBrowserInto(path);
+                            }
+                        });
+                    }
+                    
+                    const queryInput = document.getElementById('repoFilesFilterQuery');
+                    const query = (queryInput ? queryInput.value : '').trim().toLowerCase();
+                    
+                    const filesList = repoBrowserAllFiles || [];
+                    if (query) {
+                        const filtered = filesList.filter(f => f.toLowerCase().includes(query));
+                        const html = filtered.map(f => {
+                            return '<div class="repo-browser-row">' +
+                                '<span class="repo-icon">📄</span>' +
+                                '<span class="repo-name" style="font-size:11px;">' + f + '</span>' +
+                                '<span class="repo-commit">matched search</span>' +
+                                '<span class="repo-time">now</span>' +
+                            '</div>';
+                        }).join('');
+                        listContainer.innerHTML = html || '<div style="color:var(--text-muted); padding:12px; text-align:center;">No matching files</div>';
+                        return;
+                    }
+                    
+                    const items = getDirectoryContents(filesList, repoBrowserCurrentPath);
+                    
+                    let html = '';
+                    if (repoBrowserCurrentPath) {
+                        html += '<div class="repo-browser-row back-row">' +
+                            '<span class="repo-icon">📁</span>' +
+                            '<span class="repo-name" style="color: var(--accent);">..</span>' +
+                            '<span class="repo-commit">go back</span>' +
+                            '<span class="repo-time"></span>' +
+                        '</div>';
+                    }
+                    
+                    html += items.map(item => {
+                        const icon = item.isDirectory ? '📁' : '📄';
+                        const commitMsg = item.isDirectory ? 'nothing' : (item.name === 'README.md' ? 'Incremental synchronization sync' : 'updated');
+                        const timeVal = 'yesterday';
+                        
+                        return '<div class="repo-browser-row" data-is-dir="' + item.isDirectory + '" data-path="' + item.path + '">' +
+                            '<span class="repo-icon">' + icon + '</span>' +
+                            '<span class="repo-name ' + (item.isDirectory ? 'dir-link' : '') + '">' + item.name + '</span>' +
+                            '<span class="repo-commit">' + commitMsg + '</span>' +
+                            '<span class="repo-time">' + timeVal + '</span>' +
+                        '</div>';
+                    }).join('');
+                    
+                    listContainer.innerHTML = html || '<div style="color:var(--text-muted); padding:12px; text-align:center;">Empty directory</div>';
+                }
 
                 function renderTargetSelectionCardByIndex(idx) {
                     const repo = currentSearchResults[idx];
@@ -392,15 +824,20 @@ class SidebarProvider {
                 }
 
                 function renderTargetSelectionCard(repo) {
+                    window.focusedRepoSelected = repo;
                     const card = document.getElementById('searchDetailCard');
                     card.style.display = 'block';
                     card.innerHTML = 
                         '<div class="form-label" style="color:var(--accent);">Focused Upstream Repository</div>' +
                         '<div style="font-weight:bold; font-size:13px; margin-bottom:4px;">' + repo.name + '</div>' +
                         '<div style="font-size:11px; margin-bottom:4px;"><b>Scope Matrix:</b> ' + repo.visibility + '</div>' +
-                        '<div style="font-size:11px; margin-bottom:4px;"><b>Target Branch:</b> ' + repo.branch + '</div>' +
-                        '<div class="form-label" style="margin-top:8px; margin-bottom:4px;">Repository Files</div>' +
-                        '<div id="detailRepoFiles" class="file-scroll-stack" style="max-height:85px; margin-bottom:12px;">Loading files...</div>' +
+                        '<div style="font-size:11px; margin-bottom:12px;"><b>Target Branch:</b> ' + repo.branch + '</div>' +
+                        
+                        '<div class="form-label">Search Files</div>' +
+                        '<input type="text" id="repoFilesFilterQuery" class="workspace-field" style="margin-bottom: 8px;" placeholder="Search files in repo..." onkeyup="renderRepoBrowser()" />' +
+                        
+                        '<div id="detailRepoFiles" class="file-scroll-stack" style="max-height:160px; overflow-y:auto; margin-bottom:12px; padding:0; border: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">Loading files...</div>' +
+                        
                         '<div class="btn-row">' +
                             '<button id="btnSearchCancel" class="btn btn-secondary" style="font-size:10px; padding:4px;">Cancel</button>' +
                             '<button id="btnSearchClone" class="btn btn-primary" style="font-size:10px; padding:4px;">Clone Target</button>' +
@@ -408,23 +845,152 @@ class SidebarProvider {
                     
                     document.getElementById('btnSearchCancel').onclick = () => {
                         card.style.display = 'none';
+                        window.focusedRepoSelected = null;
+                        repoBrowserAllFiles = [];
+                        repoBrowserCurrentPath = "";
+                        saveWebviewState();
                     };
                     document.getElementById('btnSearchClone').onclick = () => {
                         vscode.postMessage({command:'triggerClone', payload: repo.link});
                     };
+                    saveWebviewState();
                 }
 
-                function renderFilteredWorkspaceFiles() {
-                    const query = (document.getElementById('curFilesSearch').value || '').toLowerCase();
-                    const filtered = currentWorkspaceFiles.filter(f => f.toLowerCase().includes(query));
-                    const fileBox = document.getElementById('curFilesList');
-                    fileBox.innerHTML = filtered.length ? filtered.map(f => '<div class="file-stack-item">' + f + '</div>').join('') : '<div style="color:var(--text-muted); padding:4px;">No files matched</div>';
+                function renderCurBrowser() {
+                    const query = (document.getElementById('curFilesSearch')?.value || '').toLowerCase();
+                    const listContainer = document.getElementById('curFilesList');
+                    if (!listContainer) return;
+                    
+                    let files = curBrowserAllFiles || [];
+                    
+                    if (query) {
+                        const filtered = files.filter(f => f.toLowerCase().includes(query));
+                        listContainer.innerHTML = filtered.map(f => 
+                            '<div class="repo-browser-row" data-is-dir="false" data-path="' + f + '">' +
+                                '<span class="repo-icon">📄</span>' +
+                                '<span class="repo-name">' + f + '</span>' +
+                                '<span class="repo-commit">Local Asset</span>' +
+                                '<span class="repo-time">-</span>' +
+                            '</div>'
+                        ).join('');
+                        return;
+                    }
+                    
+                    const items = getDirectoryContents(files, curBrowserCurrentPath);
+                    let html = '';
+                    if (curBrowserCurrentPath) {
+                        html += '<div class="repo-browser-row back-row" data-is-dir="true" data-path="..">' +
+                            '<span class="repo-icon">📁</span>' +
+                            '<span class="repo-name" style="color: var(--accent);">..</span>' +
+                            '<span class="repo-commit">go back</span>' +
+                            '<span class="repo-time"></span>' +
+                        '</div>';
+                    }
+                    
+                    html += items.map(item => {
+                        const icon = item.isDirectory ? '📁' : '📄';
+                        return '<div class="repo-browser-row" data-is-dir="' + item.isDirectory + '" data-path="' + item.name + '">' +
+                            '<span class="repo-icon">' + icon + '</span>' +
+                            '<span class="repo-name ' + (item.isDirectory ? 'dir-link' : '') + '">' + item.name + '</span>' +
+                            '<span class="repo-commit">' + (item.isDirectory ? 'Directory' : 'Local Asset') + '</span>' +
+                            '<span class="repo-time">-</span>' +
+                        '</div>';
+                    }).join('');
+                    
+                    listContainer.innerHTML = html || '<div style="color:var(--text-muted); padding:12px; text-align:center;">Empty directory</div>';
                 }
 
-                function filterCurFiles() {
-                    renderFilteredWorkspaceFiles();
+                document.getElementById('curFilesList').onclick = (e) => {
+                    const row = e.target.closest('.repo-browser-row');
+                    if (!row) return;
+                    const path = row.getAttribute('data-path');
+                    const isDir = row.getAttribute('data-is-dir') === 'true';
+                    if (!isDir) return;
+                    
+                    if (path === '..') {
+                        const parts = curBrowserCurrentPath.split('/');
+                        parts.pop();
+                        curBrowserCurrentPath = parts.join('/');
+                    } else {
+                        curBrowserCurrentPath = curBrowserCurrentPath ? curBrowserCurrentPath + '/' + path : path;
+                    }
+                    renderCurBrowser();
+                    saveWebviewState();
+                };
+
+                // GitBuddy Push Pipeline control click event listeners
+                const runPipelineBtn = document.getElementById('btnRunPipeline');
+                if (runPipelineBtn) {
+                    runPipelineBtn.onclick = () => {
+                        const msgInput = document.getElementById('pipelineCommitMessage');
+                        const commitMsg = msgInput ? msgInput.value.trim() : '';
+                        vscode.postMessage({ command: 'runOneClickPush', commitMessage: commitMsg });
+                    };
                 }
+
+                const suggestBtn = document.getElementById('btnSuggestCommitMsg');
+                if (suggestBtn) {
+                    suggestBtn.onclick = () => {
+                        vscode.postMessage({ command: 'requestCommitSuggestion' });
+                    };
+                }
+
+                const undoBtn = document.getElementById('btnUndoCommit');
+                if (undoBtn) {
+                    undoBtn.onclick = () => {
+                        vscode.postMessage({ command: 'triggerUndoCommit' });
+                    };
+                }
+
+                const redoBtn = document.getElementById('btnRedoCommit');
+                if (redoBtn) {
+                    redoBtn.onclick = () => {
+                        vscode.postMessage({ command: 'triggerRedoCommit' });
+                    };
+                }
+
+                // Toast management helper
+                function showToast(message, type = 'info', duration = 4000) {
+                    const container = document.getElementById('toast-container');
+                    if (!container) return;
+                    
+                    const toast = document.createElement('div');
+                    toast.className = 'toast-notification ' + type;
+                    
+                    let symbol = 'ℹ️';
+                    if (type === 'success') symbol = '✅';
+                    else if (type === 'error') symbol = '❌';
+                    else if (type === 'warning') symbol = '⚠️';
+                    
+                    toast.innerHTML = '<span>' + symbol + ' ' + message + '</span>' +
+                        '<button class="toast-close-btn">&times;</button>';
+                    
+                    toast.querySelector('.toast-close-btn').onclick = () => {
+                        toast.classList.remove('show');
+                        setTimeout(() => toast.remove(), 300);
+                    };
+                    
+                    container.appendChild(toast);
+                    
+                    // Force reflow
+                    toast.offsetHeight;
+                    toast.classList.add('show');
+                    
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.classList.remove('show');
+                            setTimeout(() => {
+                                if (toast.parentNode) toast.remove();
+                            }, 300);
+                        }
+                    }, duration);
+                }
+
+                restoreWebviewState();
+                vscode.postMessage({ command: 'webviewReady' });
             </script>
+            <!-- Toast Notification Container -->
+            <div id="toast-container" style="position: fixed; bottom: 12px; right: 12px; left: 12px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none;"></div>
         </body>
         </html>`;
     }
