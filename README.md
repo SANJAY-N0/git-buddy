@@ -5,7 +5,6 @@
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="img-file/img1.png" width="280" alt="Git Buddy Dashboard"/>
   <img src="img-file/img2.png" width="280" alt="Push Pipeline"/>
   <img src="img-file/img3.png" width="280" alt="Repository Dashboard"/>
 </p>
