@@ -6,14 +6,14 @@
 
 <p align="center">
   <img src="img-file/img1.png" width="280" alt="Git Buddy Dashboard"/>
-  <img src="./assets/images/img2.png" width="280" alt="Push Pipeline"/>
-  <img src="./assets/images/img3.png" width="280" alt="Repository Dashboard"/>
+  <img src="img-file/img2.png" width="280" alt="Push Pipeline"/>
+  <img src="img-file/img3.png" width="280" alt="Repository Dashboard"/>
 </p>
 
 <p align="center">
-  <img src="./assets/images/img4.png" width="280" alt="GitHub Authentication"/>
-  <img src="./assets/images/img5.png" width="280" alt="Commit Suggestions"/>
-  <img src="./assets/images/img6.png" width="280" alt="Notifications"/>
+  <img src="img-file/img4.png" width="280" alt="GitHub Authentication"/>
+  <img src="img-file/img5.png" width="280" alt="Commit Suggestions"/>
+  <img src="img-file/img6.png" width="280" alt="Notifications"/>
 </p>
 
 
