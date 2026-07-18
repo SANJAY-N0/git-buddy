@@ -2,6 +2,8 @@
 
 **Git Buddy** is an interactive, high-speed, and automated Git push pipeline provider for VS Code. It replaces multi-step manual git staging, committing, authentication, and pushing with a single click, using an elegant glassmorphism stepper dashboard right in your sidebar.
 
+![Git Buddy Dashboard](img-file/git_buddy_dashboard.png)
+
 ---
 
 ## Key Features 🌟
